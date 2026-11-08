@@ -1,240 +1,97 @@
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>大心社區｜連續掃碼測試</title>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大心社區｜134戶連續掃碼報到</title>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <style>
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 20px 12px;
-    background: #f3f6fa;
-    color: #243449;
-    font-family: Arial, sans-serif;
-    text-align: center;
-  }
-  h2 { margin-bottom: 8px; }
-  .sub { color: #68788b; font-size: 14px; }
-  #reader {
-    position: relative;
-    max-width: 440px;
-    margin: 18px auto;
-    background: #111;
-    border-radius: 12px;
-    overflow: hidden;
-  }
-  video { display: block; width: 100%; }
-  button {
-    border: 0;
-    border-radius: 9px;
-    background: #1769aa;
-    color: white;
-    padding: 13px 20px;
-    margin: 5px;
-    font-size: 16px;
-  }
-  button:disabled { background: #9aa7b5; }
-  #status {
-    max-width: 440px;
-    margin: 15px auto;
-    padding: 14px;
-    border-radius: 9px;
-    background: white;
-    overflow-wrap: anywhere;
-  }
-  .success { background: #d9f5e2 !important; }
-  .error { background: #ffe1e1 !important; }
-  #count { font-weight: bold; font-size: 19px; }
+*{box-sizing:border-box}body{margin:0;padding:20px 12px;background:#f3f6fa;color:#243449;font-family:Arial,'Microsoft JhengHei',sans-serif;text-align:center}
+h2{margin-bottom:8px}.sub{color:#68788b;font-size:14px}#reader{max-width:440px;margin:18px auto;background:#111;border-radius:12px;overflow:hidden}video{display:block;width:100%}
+button{border:0;border-radius:9px;background:#1769aa;color:#fff;padding:13px 20px;margin:5px;font-size:16px}button:disabled{background:#9aa7b5}
+#status{max-width:440px;margin:15px auto;padding:14px;border-radius:9px;background:#fff;overflow-wrap:anywhere;min-height:50px}.success{background:#d9f5e2!important}.error{background:#ffe1e1!important}
+#count{font-weight:bold;font-size:19px}#staffKey{padding:12px;width:min(90%,280px);font-size:17px;border:1px solid #b8c7d8;border-radius:9px}
 </style>
 </head>
 <body>
-<h2>大心社區｜連續掃碼測試</h2>
-<div class="sub">第二階段：測試手機連續辨識 QR Code</div>
-
-<div id="reader">
-  <video id="video" autoplay muted playsinline></video>
-</div>
-
-<button id="startBtn" onclick="startScanner()">開啟相機</button>
-<button id="stopBtn" onclick="stopScanner()" disabled>關閉相機</button>
-
-<div id="status">尚未開啟相機</div>
-<div id="count">成功辨識：0 次</div>
-<p class="sub">測試版不會寫入任何報到資料</p>
-
+<h2>大心社區｜134戶連續掃碼報到</h2>
+<p class="sub">115年度區分所有權人會議｜正式報到</p>
+<label for="staffKey">工作人員密碼</label><div><input id="staffKey" type="password" autocomplete="off" placeholder="請輸入工作人員密碼"></div>
+<p id="bridgeStatus" class="sub">Google 連線：等待回應中</p>
+<div id="reader"><video id="video" autoplay muted playsinline></video></div>
+<button id="startBtn" onclick="startScanner()" disabled>開啟相機</button><button id="stopBtn" onclick="stopScanner()" disabled>關閉相機</button>
+<div id="status" role="status">等待 Google 連線</div>
+<div id="count">本機本次成功：0 戶</div>
+<p class="sub">僅顯示本手機本次成功筆數；正式出席總數請以 Google 試算表統計為準。</p>
+<iframe id="bridge" title="Google 報到連線" style="display:none" referrerpolicy="no-referrer" src="https://script.google.com/macros/s/AKfycby8dYEzI_MJSgq_UBT_-jAeHXtuR2oU8Xi5vq_SLdACGhrPpTS1A1irUind-iC4kh--hw/exec?bridge=formal"></iframe>
 <script>
-let stream = null;
-let running = false;
-let count = 0;
-let lastValue = "";
-let lastTime = 0;
-let frameId = null;
-
-const video = document.getElementById("video");
-const statusBox = document.getElementById("status");
-const startBtn = document.getElementById("startBtn");
-const stopBtn = document.getElementById("stopBtn");
-const canvas = document.createElement("canvas");
-const ctx = canvas.getContext("2d", { willReadFrequently: true });
-
-function showStatus(message, type = "") {
-  statusBox.textContent = message;
-  statusBox.className = type;
+'use strict';
+let stream=null,running=false,frameId=null,bridgeWindow=null,bridgeOrigin=null,pending=null,successCount=0,lastCompletedToken='',lastCompletedAt=0;
+const video=document.getElementById('video'),statusBox=document.getElementById('status'),startBtn=document.getElementById('startBtn'),stopBtn=document.getElementById('stopBtn'),keyInput=document.getElementById('staffKey');
+const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d',{willReadFrequently:true});
+const bridge=document.getElementById('bridge');
+const FORMAL_BASE_URL='https://script.google.com/macros/s/AKfycby8dYEzI_MJSgq_UBT_-jAeHXtuR2oU8Xi5vq_SLdACGhrPpTS1A1irUind-iC4kh--hw/exec';
+function showStatus(message,type=''){statusBox.textContent=message;statusBox.className=type;}
+function trustedBridgeOrigin(origin){
+  try{const u=new URL(origin);return u.protocol==='https:'&&(u.hostname==='script.google.com'||u.hostname.endsWith('.googleusercontent.com'));}catch(e){return false;}
 }
-
-async function startScanner() {
-  if (running) return;
-
-  if (typeof jsQR !== "function") {
-    showStatus("QR 辨識程式未載入，請檢查網路連線", "error");
-    return;
+window.addEventListener('message',function(event){
+  const data=event.data||{};
+  if(data.type==='FORMAL_BRIDGE_READY'){
+    if(!trustedBridgeOrigin(event.origin))return;
+    bridgeWindow=event.source;bridgeOrigin=event.origin;
+    document.getElementById('bridgeStatus').textContent='Google 連線：已收到橋接回應';
+    startBtn.disabled=false;showStatus('請輸入密碼，再開啟相機');return;
   }
-
-  startBtn.disabled = true;
-  showStatus("正在開啟相機……");
-
-  try {
-    stream = await navigator.mediaDevices.getUserMedia({
-      audio: false,
-      video: {
-        facingMode: { ideal: "environment" },
-        width: { ideal: 1280 },
-        height: { ideal: 720 }
-      }
-    });
-
-    video.srcObject = stream;
-    await video.play();
-
-    running = true;
-    stopBtn.disabled = false;
-    showStatus("相機已開啟，請掃描 QR Code", "success");
-    scanFrame();
-  } catch (err) {
-    showStatus("相機啟動失敗：" + err.message, "error");
-    startBtn.disabled = false;
-    if (stream) {
-      stream.getTracks().forEach(track => track.stop());
-      stream = null;
-    }
-  }
-}
-
-function scanFrame() {
-  if (!running) return;
-
-  if (video.readyState >= 2 &&
-      video.videoWidth > 0 &&
-      video.videoHeight > 0) {
-    try {
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      const imageData = ctx.getImageData(
-        0, 0, canvas.width, canvas.height
-      );
-
-      const result = jsQR(
-        imageData.data,
-        imageData.width,
-        imageData.height,
-        { inversionAttempts: "attemptBoth" }
-      );
-
-      if (result && result.data) {
-        onScanSuccess(result.data);
-      }
-    } catch (err) {
-      showStatus("辨識發生錯誤：" + err.message, "error");
-      stopScanner();
-      return;
-    }
-  }
-
-  frameId = requestAnimationFrame(scanFrame);
-}
-
-
-function onScanSuccess(value) {
-  const now = Date.now();
-
-  if (value === lastValue && now - lastTime < 3000) {
-    return;
-  }
-
-  lastValue = value;
-  lastTime = now;
-  count++;
-
-  document.getElementById("count").textContent =
-    "成功辨識：" + count + " 次";
-
-  showStatus("QR Code 已辨識，等待測試報到連線", "success");
-
-  let token = "";
-  try {
-    const url = new URL(value);
-    token = url.searchParams.get("t") || "";
-  } catch (error) {
-    showStatus("QR Code 不是有效的報到網址");
-    return;
-  }
-
-  if (!/^[a-f0-9]{32}$/.test(token)) {
-    showStatus("QR Code 識別碼格式不正確");
-    return;
-  }
-
-  showStatus("測試 QR Code 格式正確，尚未送出報到", "success");
-}
-
-
-function stopScanner() {
-  running = false;
-
-  if (frameId !== null) {
-    cancelAnimationFrame(frameId);
-    frameId = null;
-  }
-
-  if (stream) {
-    stream.getTracks().forEach(track => track.stop());
-    stream = null;
-  }
-
-  video.pause();
-  video.srcObject = null;
-
-  startBtn.disabled = false;
-  stopBtn.disabled = true;
-  showStatus("相機已關閉");
-}
-</script>
-<div style="margin:16px 0; text-align:center;">
-  <label for="staffKey">工作人員密碼：</label>
-  <input
-    id="staffKey"
-    type="password"
-    autocomplete="off"
-    placeholder="請輸入工作人員密碼"
-    style="padding:10px; max-width:220px;"
-  >
-</div>
- 
- <p id="bridgeStatus">Google 連線：等待回應中</p>
-<script>
-window.addEventListener("message", function(event) {
-  if (event.data && event.data.type === "TEST_BRIDGE_READY") {
-    document.getElementById("bridgeStatus").textContent =
-      "Google 連線：已收到橋接回應";
+  if(data.type!=='FORMAL_CHECKIN_RESULT'||!pending||!bridgeWindow)return;
+  if(event.source!==bridgeWindow||event.origin!==bridgeOrigin||data.id!==pending.id)return;
+  const completed=pending;pending=null;
+  if(data.success){
+    const result=data.result||{};
+    if(!result.already){successCount++;document.getElementById('count').textContent='本機本次成功：'+successCount+' 戶';}
+    lastCompletedToken=completed.token;lastCompletedAt=Date.now();
+    showStatus(result.message||'報到完成',result.already?'':'success');
+  }else{
+    showStatus('報到未完成：'+(data.message||'未知錯誤'),'error');
   }
 });
+async function startScanner(){
+  if(running)return;
+  if(!bridgeWindow){showStatus('Google 尚未連線，請稍後再試','error');return;}
+  if(!keyInput.value.trim()){showStatus('請先輸入工作人員密碼','error');keyInput.focus();return;}
+  if(typeof jsQR!=='function'){showStatus('QR 辨識程式未載入，請檢查網路','error');return;}
+  startBtn.disabled=true;showStatus('正在開啟相機……');
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});
+    video.srcObject=stream;await video.play();running=true;stopBtn.disabled=false;showStatus('相機已開啟，請掃描 QR Code');scanFrame();
+  }catch(err){showStatus('相機啟動失敗：'+err.message,'error');startBtn.disabled=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}}
+}
+function scanFrame(){
+  if(!running)return;
+  if(!pending&&video.readyState>=2&&video.videoWidth>0&&video.videoHeight>0){
+    try{
+      canvas.width=video.videoWidth;canvas.height=video.videoHeight;ctx.drawImage(video,0,0,canvas.width,canvas.height);
+      const pixels=ctx.getImageData(0,0,canvas.width,canvas.height);
+      const qr=jsQR(pixels.data,pixels.width,pixels.height,{inversionAttempts:'attemptBoth'});
+      if(qr&&qr.data)onScanSuccess(qr.data);
+    }catch(err){showStatus('辨識發生錯誤：'+err.message,'error');stopScanner();return;}
+  }
+  frameId=requestAnimationFrame(scanFrame);
+}
+function onScanSuccess(value){
+  if(pending)return;
+  let url;
+  try{url=new URL(value);}catch(e){showStatus('不是有效的報到網址','error');return;}
+  if(url.origin+url.pathname!==FORMAL_BASE_URL){showStatus('不是本系統的 Google 報到網址','error');return;}
+  const token=url.searchParams.get('t')||'';
+  if(!/^[a-f0-9]{32}$/.test(token)){showStatus('QR Code 識別碼格式不正確','error');return;}
+  if(token===lastCompletedToken&&Date.now()-lastCompletedAt<5000)return;
+  const key=keyInput.value.trim();if(!key){showStatus('請先輸入工作人員密碼','error');return;}
+  if(!bridgeWindow){showStatus('Google 連線中斷','error');return;}
+  const id=String(Date.now())+'-'+Math.random().toString(36).slice(2);
+  pending={id,token};showStatus('已辨識 QR Code，等待 Google 確認寫入……');
+  try{bridgeWindow.postMessage({type:'FORMAL_CHECKIN',id,token,key},bridgeOrigin);}catch(err){pending=null;showStatus('傳送失敗：'+err.message,'error');}
+  setTimeout(function(){if(pending&&pending.id===id){pending=null;showStatus('等待 Google 回應逾時，請先檢查試算表是否已寫入，再決定是否重掃','error');}},20000);
+}
+function stopScanner(){running=false;if(frameId!==null){cancelAnimationFrame(frameId);frameId=null;}if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}video.pause();video.srcObject=null;startBtn.disabled=!bridgeWindow;stopBtn.disabled=true;showStatus('相機已關閉');}
 </script>
-</body>
-</html>
-
-
+</body></html>
