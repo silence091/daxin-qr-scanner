@@ -1,0 +1,212 @@
+
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1">
+  <title>大心社區｜連續掃碼測試</title>
+
+  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      background: #f3f6fa;
+      font-family: Arial, sans-serif;
+      color: #243449;
+      text-align: center;
+      padding: 22px 14px;
+    }
+
+    h2 { margin-bottom: 8px; }
+
+    .sub {
+      font-size: 14px;
+      color: #68788b;
+      margin-bottom: 20px;
+    }
+
+    #reader {
+      width: 100%;
+      max-width: 440px;
+      margin: auto;
+      background: #111;
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    button {
+      border: none;
+      border-radius: 9px;
+      background: #1769aa;
+      color: white;
+      padding: 13px 22px;
+      font-size: 16px;
+      margin: 12px 4px;
+    }
+
+    button:disabled {
+      background: #9aa7b5;
+    }
+
+    #status {
+      max-width: 440px;
+      margin: 12px auto;
+      padding: 14px;
+      border-radius: 9px;
+      background: white;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+
+    .success {
+      background: #d9f5e2 !important;
+      color: #176b39;
+    }
+
+    .error {
+      background: #ffe1e1 !important;
+      color: #a32222;
+    }
+
+    .info {
+      background: #fff0c5 !important;
+      color: #795600;
+    }
+
+    #count {
+      margin-top: 12px;
+      font-weight: bold;
+    }
+  </style>
+</head>
+
+<body>
+  <h2>大心社區｜連續掃碼測試</h2>
+  <div class="sub">第一階段：測試手機連續掃描 QR Code</div>
+
+  <div id="reader"></div>
+
+  <button id="startBtn" onclick="startScanner()">
+    開啟相機
+  </button>
+
+  <button id="stopBtn" onclick="stopScanner()" disabled>
+    關閉相機
+  </button>
+
+  <div id="status">尚未開啟相機</div>
+  <div id="count">成功辨識：0 次</div>
+
+  <script>
+    let scanner = null;
+    let running = false;
+    let busy = false;
+    let count = 0;
+    let lastValue = "";
+    let lastTime = 0;
+
+    const statusBox = document.getElementById("status");
+    const startBtn = document.getElementById("startBtn");
+    const stopBtn = document.getElementById("stopBtn");
+
+    function showStatus(message, type = "") {
+      statusBox.textContent = message;
+      statusBox.className = type;
+    }
+
+    async function startScanner() {
+      if (running) return;
+
+      if (typeof Html5Qrcode === "undefined") {
+        showStatus("掃碼程式未載入，請檢查網路連線", "error");
+        return;
+      }
+
+      startBtn.disabled = true;
+      showStatus("正在啟動相機……");
+
+      try {
+        scanner = new Html5Qrcode("reader");
+
+        await scanner.start(
+          { facingMode: "environment" },
+          {
+            fps: 10,
+            qrbox: { width: 230, height: 230 }
+          },
+          onScanSuccess,
+          () => {}
+        );
+
+        running = true;
+        stopBtn.disabled = false;
+        showStatus("相機已開啟，請掃描 QR Code", "success");
+
+      } catch (err) {
+        showStatus("無法啟動相機：" + err, "error");
+        startBtn.disabled = false;
+        scanner = null;
+      }
+    }
+
+    function onScanSuccess(decodedText) {
+      if (busy) return;
+
+      const now = Date.now();
+
+      // 同一張 QR Code 於 3 秒內不重複計數
+      if (
+        decodedText === lastValue &&
+        now - lastTime < 3000
+      ) {
+        return;
+      }
+
+      busy = true;
+      lastValue = decodedText;
+      lastTime = now;
+      count++;
+
+      document.getElementById("count").textContent =
+        "成功辨識：" + count + " 次";
+
+      showStatus(
+        "辨識成功！\n相機會繼續掃描下一張 QR Code",
+        "success"
+      );
+
+      // 不開啟 QR 網址、不傳送資料
+      setTimeout(() => {
+        busy = false;
+        if (running) {
+          showStatus("請掃描下一張 QR Code");
+        }
+      }, 1000);
+    }
+
+    async function stopScanner() {
+      if (!scanner || !running) return;
+
+      stopBtn.disabled = true;
+
+      try {
+        await scanner.stop();
+        scanner.clear();
+      } catch (err) {
+        console.error(err);
+      }
+
+      running = false;
+      busy = false;
+      scanner = null;
+      startBtn.disabled = false;
+
+      showStatus("相機已關閉");
+    }
+  </script>
+</body>
+</html>
