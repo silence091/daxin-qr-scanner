@@ -214,7 +214,18 @@ function stopScanner() {
   showStatus("相機已關閉");
 }
 </script>
-<p id="bridgeStatus">Google 連線：等待回應中</p>
+<div style="margin:16px 0; text-align:center;">
+  <label for="staffKey">工作人員密碼：</label>
+  <input
+    id="staffKey"
+    type="password"
+    autocomplete="off"
+    placeholder="請輸入工作人員密碼"
+    style="padding:10px; max-width:220px;"
+  >
+</div>
+ 
+ <p id="bridgeStatus">Google 連線：等待回應中</p>
 <script>
 window.addEventListener("message", function(event) {
   if (event.data && event.data.type === "TEST_BRIDGE_READY") {
