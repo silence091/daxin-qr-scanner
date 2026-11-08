@@ -158,6 +158,7 @@ function scanFrame() {
   frameId = requestAnimationFrame(scanFrame);
 }
 
+
 function onScanSuccess(value) {
   const now = Date.now();
 
@@ -172,11 +173,25 @@ function onScanSuccess(value) {
   document.getElementById("count").textContent =
     "成功辨識：" + count + " 次";
 
-  showStatus(
-    "辨識成功！請繼續掃描下一張 QR Code",
-    "success"
-  );
+  showStatus("QR Code 已辨識，等待測試報到連線", "success");
+
+  let token = "";
+  try {
+    const url = new URL(value);
+    token = url.searchParams.get("t") || "";
+  } catch (error) {
+    showStatus("QR Code 不是有效的報到網址");
+    return;
+  }
+
+  if (!/^[a-f0-9]{32}$/.test(token)) {
+    showStatus("QR Code 識別碼格式不正確");
+    return;
+  }
+
+  showStatus("測試 QR Code 格式正確，尚未送出報到", "success");
 }
+
 
 function stopScanner() {
   running = false;
