@@ -1,212 +1,203 @@
-
 <!DOCTYPE html>
 <html lang="zh-Hant">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1">
-  <title>大心社區｜連續掃碼測試</title>
-
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-
-  <style>
-    * { box-sizing: border-box; }
-
-    body {
-      margin: 0;
-      background: #f3f6fa;
-      font-family: Arial, sans-serif;
-      color: #243449;
-      text-align: center;
-      padding: 22px 14px;
-    }
-
-    h2 { margin-bottom: 8px; }
-
-    .sub {
-      font-size: 14px;
-      color: #68788b;
-      margin-bottom: 20px;
-    }
-
-    #reader {
-      width: 100%;
-      max-width: 440px;
-      margin: auto;
-      background: #111;
-      border-radius: 12px;
-      overflow: hidden;
-    }
-
-    button {
-      border: none;
-      border-radius: 9px;
-      background: #1769aa;
-      color: white;
-      padding: 13px 22px;
-      font-size: 16px;
-      margin: 12px 4px;
-    }
-
-    button:disabled {
-      background: #9aa7b5;
-    }
-
-    #status {
-      max-width: 440px;
-      margin: 12px auto;
-      padding: 14px;
-      border-radius: 9px;
-      background: white;
-      line-height: 1.6;
-      overflow-wrap: anywhere;
-    }
-
-    .success {
-      background: #d9f5e2 !important;
-      color: #176b39;
-    }
-
-    .error {
-      background: #ffe1e1 !important;
-      color: #a32222;
-    }
-
-    .info {
-      background: #fff0c5 !important;
-      color: #795600;
-    }
-
-    #count {
-      margin-top: 12px;
-      font-weight: bold;
-    }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>大心社區｜連續掃碼測試</title>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 20px 12px;
+    background: #f3f6fa;
+    color: #243449;
+    font-family: Arial, sans-serif;
+    text-align: center;
+  }
+  h2 { margin-bottom: 8px; }
+  .sub { color: #68788b; font-size: 14px; }
+  #reader {
+    position: relative;
+    max-width: 440px;
+    margin: 18px auto;
+    background: #111;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  video { display: block; width: 100%; }
+  button {
+    border: 0;
+    border-radius: 9px;
+    background: #1769aa;
+    color: white;
+    padding: 13px 20px;
+    margin: 5px;
+    font-size: 16px;
+  }
+  button:disabled { background: #9aa7b5; }
+  #status {
+    max-width: 440px;
+    margin: 15px auto;
+    padding: 14px;
+    border-radius: 9px;
+    background: white;
+    overflow-wrap: anywhere;
+  }
+  .success { background: #d9f5e2 !important; }
+  .error { background: #ffe1e1 !important; }
+  #count { font-weight: bold; font-size: 19px; }
+</style>
 </head>
-
 <body>
-  <h2>大心社區｜連續掃碼測試</h2>
-  <div class="sub">第一階段：測試手機連續掃描 QR Code</div>
+<h2>大心社區｜連續掃碼測試</h2>
+<div class="sub">第二階段：測試手機連續辨識 QR Code</div>
 
-  <div id="reader"></div>
+<div id="reader">
+  <video id="video" autoplay muted playsinline></video>
+</div>
 
-  <button id="startBtn" onclick="startScanner()">
-    開啟相機
-  </button>
+<button id="startBtn" onclick="startScanner()">開啟相機</button>
+<button id="stopBtn" onclick="stopScanner()" disabled>關閉相機</button>
 
-  <button id="stopBtn" onclick="stopScanner()" disabled>
-    關閉相機
-  </button>
+<div id="status">尚未開啟相機</div>
+<div id="count">成功辨識：0 次</div>
+<p class="sub">測試版不會寫入任何報到資料</p>
 
-  <div id="status">尚未開啟相機</div>
-  <div id="count">成功辨識：0 次</div>
+<script>
+let stream = null;
+let running = false;
+let count = 0;
+let lastValue = "";
+let lastTime = 0;
+let frameId = null;
 
-  <script>
-    let scanner = null;
-    let running = false;
-    let busy = false;
-    let count = 0;
-    let lastValue = "";
-    let lastTime = 0;
+const video = document.getElementById("video");
+const statusBox = document.getElementById("status");
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const canvas = document.createElement("canvas");
+const ctx = canvas.getContext("2d", { willReadFrequently: true });
 
-    const statusBox = document.getElementById("status");
-    const startBtn = document.getElementById("startBtn");
-    const stopBtn = document.getElementById("stopBtn");
+function showStatus(message, type = "") {
+  statusBox.textContent = message;
+  statusBox.className = type;
+}
 
-    function showStatus(message, type = "") {
-      statusBox.textContent = message;
-      statusBox.className = type;
+async function startScanner() {
+  if (running) return;
+
+  if (typeof jsQR !== "function") {
+    showStatus("QR 辨識程式未載入，請檢查網路連線", "error");
+    return;
+  }
+
+  startBtn.disabled = true;
+  showStatus("正在開啟相機……");
+
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: {
+        facingMode: { ideal: "environment" },
+        width: { ideal: 1280 },
+        height: { ideal: 720 }
+      }
+    });
+
+    video.srcObject = stream;
+    await video.play();
+
+    running = true;
+    stopBtn.disabled = false;
+    showStatus("相機已開啟，請掃描 QR Code", "success");
+    scanFrame();
+  } catch (err) {
+    showStatus("相機啟動失敗：" + err.message, "error");
+    startBtn.disabled = false;
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      stream = null;
     }
+  }
+}
 
-    async function startScanner() {
-      if (running) return;
+function scanFrame() {
+  if (!running) return;
 
-      if (typeof Html5Qrcode === "undefined") {
-        showStatus("掃碼程式未載入，請檢查網路連線", "error");
-        return;
-      }
+  if (video.readyState >= 2 &&
+      video.videoWidth > 0 &&
+      video.videoHeight > 0) {
+    try {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
 
-      startBtn.disabled = true;
-      showStatus("正在啟動相機……");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      try {
-        scanner = new Html5Qrcode("reader");
-
-        await scanner.start(
-          { facingMode: "environment" },
-          {
-            fps: 10,
-    aspectRatio: 1.0
-          },
-          onScanSuccess,
-          () => {}
-        );
-
-        running = true;
-        stopBtn.disabled = false;
-        showStatus("相機已開啟，請掃描 QR Code", "success");
-
-      } catch (err) {
-        showStatus("無法啟動相機：" + err, "error");
-        startBtn.disabled = false;
-        scanner = null;
-      }
-    }
-
-    function onScanSuccess(decodedText) {
-      if (busy) return;
-
-      const now = Date.now();
-
-      // 同一張 QR Code 於 3 秒內不重複計數
-      if (
-        decodedText === lastValue &&
-        now - lastTime < 3000
-      ) {
-        return;
-      }
-
-      busy = true;
-      lastValue = decodedText;
-      lastTime = now;
-      count++;
-
-      document.getElementById("count").textContent =
-        "成功辨識：" + count + " 次";
-
-      showStatus(
-        "辨識成功！\n相機會繼續掃描下一張 QR Code",
-        "success"
+      const imageData = ctx.getImageData(
+        0, 0, canvas.width, canvas.height
       );
 
-      // 不開啟 QR 網址、不傳送資料
-      setTimeout(() => {
-        busy = false;
-        if (running) {
-          showStatus("請掃描下一張 QR Code");
-        }
-      }, 1000);
-    }
+      const result = jsQR(
+        imageData.data,
+        imageData.width,
+        imageData.height,
+        { inversionAttempts: "attemptBoth" }
+      );
 
-    async function stopScanner() {
-      if (!scanner || !running) return;
-
-      stopBtn.disabled = true;
-
-      try {
-        await scanner.stop();
-        scanner.clear();
-      } catch (err) {
-        console.error(err);
+      if (result && result.data) {
+        onScanSuccess(result.data);
       }
-
-      running = false;
-      busy = false;
-      scanner = null;
-      startBtn.disabled = false;
-
-      showStatus("相機已關閉");
+    } catch (err) {
+      showStatus("辨識發生錯誤：" + err.message, "error");
+      stopScanner();
+      return;
     }
-  </script>
+  }
+
+  frameId = requestAnimationFrame(scanFrame);
+}
+
+function onScanSuccess(value) {
+  const now = Date.now();
+
+  if (value === lastValue && now - lastTime < 3000) {
+    return;
+  }
+
+  lastValue = value;
+  lastTime = now;
+  count++;
+
+  document.getElementById("count").textContent =
+    "成功辨識：" + count + " 次";
+
+  showStatus(
+    "辨識成功！請繼續掃描下一張 QR Code",
+    "success"
+  );
+}
+
+function stopScanner() {
+  running = false;
+
+  if (frameId !== null) {
+    cancelAnimationFrame(frameId);
+    frameId = null;
+  }
+
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+
+  video.pause();
+  video.srcObject = null;
+
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+  showStatus("相機已關閉");
+}
+</script>
 </body>
 </html>
