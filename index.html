@@ -199,7 +199,15 @@ function stopScanner() {
   showStatus("相機已關閉");
 }
 </script>
-<iframe src="https://script.google.com/macros/s/AKfycbzN3zM4z9Bh_WC3ZUZu0_WRmYKFLhA4_DwLKI9-3slY/dev?bridge=1" title="測試報到連接" style="display:none"></iframe>
+<p id="bridgeStatus">Google 連線：等待回應中</p>
+<script>
+window.addEventListener("message", function(event) {
+  if (event.data && event.data.type === "TEST_BRIDGE_READY") {
+    document.getElementById("bridgeStatus").textContent =
+      "Google 連線：已收到橋接回應";
+  }
+});
+</script>
 </body>
 </html>
 
